@@ -1,0 +1,64 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import yfinance as yf
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, LSTM
+
+# Download stock data
+stock_ticker = "AAPL"  # Replace with your desired stock ticker
+data = yf.download(stock_ticker, start="2015-01-01", end="2023-12-31")
+
+# Prepare data
+data = data[['Close']]  # Use the 'Close' price
+scaler = MinMaxScaler(feature_range=(0, 1))
+scaled_data = scaler.fit_transform(data)
+
+# Create training and testing datasets
+training_size = int(len(scaled_data) * 0.8)
+train_data = scaled_data[:training_size]
+test_data = scaled_data[training_size:]
+
+# Create datasets for LSTM
+def create_dataset(dataset, time_step=60):
+    x, y = [], []
+    for i in range(len(dataset) - time_step):
+        x.append(dataset[i:i+time_step, 0])
+        y.append(dataset[i+time_step, 0])
+    return np.array(x), np.array(y)
+
+time_step = 60
+x_train, y_train = create_dataset(train_data, time_step)
+x_test, y_test = create_dataset(test_data, time_step)
+
+# Reshape input data to be 3D (samples, time steps, features)
+x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
+x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
+
+# Build LSTM model
+model = Sequential([
+    LSTM(50, return_sequences=True, input_shape=(x_train.shape[1], 1)),
+    LSTM(50, return_sequences=False),
+    Dense(25),
+    Dense(1)
+])
+
+model.compile(optimizer='adam', loss='mean_squared_error')
+model.fit(x_train, y_train, batch_size=64, epochs=10)
+
+# Predict and unscale predictions
+predictions = model.predict(x_test)
+predictions = scaler.inverse_transform(predictions)
+
+# Plot results
+actual_prices = scaler.inverse_transform(test_data[time_step:])
+plt.figure(figsize=(14, 6))
+plt.plot(actual_prices, label='Actual Prices', color='blue', linewidth=2)
+plt.plot(predictions, label='Predicted Prices', color='orange', linestyle='--', linewidth=2)
+plt.title(f'{stock_ticker} Stock Price Prediction', fontsize=16)
+plt.xlabel('Days', fontsize=14)
+plt.ylabel('Price (USD)', fontsize=14)
+plt.legend(fontsize=12)
+plt.grid(alpha=0.3)
+plt.show()
